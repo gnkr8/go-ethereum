@@ -63,50 +63,63 @@ var (
 
 	// ErrInsufficientFunds is returned if the total cost of executing a transaction
 	// is higher than the balance of the user's account.
+	// ErrInsufficientFunds는실행되는 전체 트렌젝션의 가격이 유저가 가진 잔고보다 높을때 발생한다
 	ErrInsufficientFunds = errors.New("insufficient funds for gas * price + value")
 
 	// ErrIntrinsicGas is returned if the transaction is specified to use less gas
 	// than required to start the invocation.
+	// ErrIntrinsicGas는 만약 트렌젝션이 시작가스값보다 낮은 값의 가스를 사용했을때 발생한다
 	ErrIntrinsicGas = errors.New("intrinsic gas too low")
 
 	// ErrGasLimit is returned if a transaction's requested gas limit exceeds the
 	// maximum allowance of the current block.
+	// ErrGasLimit은 트렌젝션이 요구하는 가스 한도가 현재 블록의 허용하는
+	// 최대 가스보다 클경우 발생한다
 	ErrGasLimit = errors.New("exceeds block gas limit")
 
 	// ErrNegativeValue is a sanity error to ensure noone is able to specify a
 	// transaction with a negative value.
+	// ErrNegativeValue는 음수값을 지정하는 트렌젝션을 확인하기위한 무결성에러
 	ErrNegativeValue = errors.New("negative value")
 
 	// ErrOversizedData is returned if the input data of a transaction is greater
 	// than some meaningful limit a user might use. This is not a consensus error
 	// making the transaction invalid, rather a DOS protection.
+	// ErrOversizedData는 주어진 트렌젝션의 데이터가 의미있는 값을 넘길경우 발생한다
+	// 합의 에러는 아니며 DOS 보호에 가깝다
 	ErrOversizedData = errors.New("oversized data")
 )
 
 var (
 	evictionInterval    = time.Minute     // Time interval to check for evictable transactions
 	statsReportInterval = 8 * time.Second // Time interval to report transaction pool stats
+	// 최출가능한 트렌젝션의 타임 인터벌
+	// 트렌젝션 풀의 상태를 보고할 인터벌
 )
 
 var (
 	// Metrics for the pending pool
+	// pending풀에 대한 상태 메트릭스
 	pendingDiscardCounter   = metrics.NewRegisteredCounter("txpool/pending/discard", nil)
 	pendingReplaceCounter   = metrics.NewRegisteredCounter("txpool/pending/replace", nil)
 	pendingRateLimitCounter = metrics.NewRegisteredCounter("txpool/pending/ratelimit", nil) // Dropped due to rate limiting
 	pendingNofundsCounter   = metrics.NewRegisteredCounter("txpool/pending/nofunds", nil)   // Dropped due to out-of-funds
 
 	// Metrics for the queued pool
+	// queued풀에대한 상태 메트릭스
 	queuedDiscardCounter   = metrics.NewRegisteredCounter("txpool/queued/discard", nil)
 	queuedReplaceCounter   = metrics.NewRegisteredCounter("txpool/queued/replace", nil)
 	queuedRateLimitCounter = metrics.NewRegisteredCounter("txpool/queued/ratelimit", nil) // Dropped due to rate limiting
 	queuedNofundsCounter   = metrics.NewRegisteredCounter("txpool/queued/nofunds", nil)   // Dropped due to out-of-funds
 
 	// General tx metrics
+	// 일반적인 트렌젝션 메트릭스
 	invalidTxCounter     = metrics.NewRegisteredCounter("txpool/invalid", nil)
 	underpricedTxCounter = metrics.NewRegisteredCounter("txpool/underpriced", nil)
 )
 
 // TxStatus is the current status of a transaction as seen by the pool.
+// 풀에존재하는 트렌젝션의 현재상태이다
 type TxStatus uint
 
 const (
@@ -129,23 +142,31 @@ type blockChain interface {
 }
 
 // TxPoolConfig are the configuration parameters of the transaction pool.
+// TxPoolConfig는 트렌젝션풀의 설정파라미터이다
 type TxPoolConfig struct {
-	// 로컬 트렌젝션을 처리하지 않음
 	NoLocals  bool          // Whether local transaction handling should be disabled
-	// 노드가 재시작되더라도 생존하기 위한 로컬 트렌젝션의 저널
+	// 로컬 트렌젝션을 처리하지 않음
 	Journal   string        // Journal of local transactions to survive node restarts
+	// 노드가 재시작되더라도 생존하기 위한 로컬 트렌젝션의 저널
 	Rejournal time.Duration // Time interval to regenerate the local transaction journal
+	// 로컬 트렌젝션의 저널을 새로 생성할때의 시간 인터벌
 
 	PriceLimit uint64 // Minimum gas price to enforce for acceptance into the pool
+	// 풀에 허용되기 위한 최소 가스
 	PriceBump  uint64 // Minimum price bump percentage to replace an already existing transaction (nonce)
+	// 이미 존재하는 트렌젝션을 대체하기 위한 최소 증가 가격
 
 	AccountSlots uint64 // Minimum number of executable transaction slots guaranteed per account
 	GlobalSlots  uint64 // Maximum number of executable transaction slots for all accounts
 	AccountQueue uint64 // Maximum number of non-executable transaction slots permitted per account
 	GlobalQueue  uint64 // Maximum number of non-executable transaction slots for all accounts
+	// 단일 계정당 실행가능한 최소 트렌젝션 슬롯
+	// 모든 계정당 실행가능한 최소 트렌젝션 슬롯
+	// 단일 계정당 실행불가능한 최소 트렌젝션 슬롯
+	// 모든 계정당 실행불가능한 최소 트렌젝션 슬롯
 
-	// 실행가능하지 않은 트렌잭션이 큐된 최대 시간
 	Lifetime time.Duration // Maximum amount of time non-executable transaction are queued
+	// 실행가능하지 않은 트렌잭션이 큐된 최대 시간
 }
 
 // DefaultTxPoolConfig contains the default configurations for the transaction
@@ -172,6 +193,7 @@ var DefaultTxPoolConfig = TxPoolConfig{
 
 // sanitize checks the provided user configurations and changes anything that's
 // unreasonable or unworkable.
+// sanitize함수는 전달된 유저의 설정을 체크하고, 이유없거나 수행 불가능한 변화를 바꾼다
 func (config *TxPoolConfig) sanitize() TxPoolConfig {
 	conf := *config
 	if conf.Rejournal < time.Second {
@@ -217,16 +239,24 @@ type TxPool struct {
 	currentState  *state.StateDB      // Current state in the blockchain head
 	pendingState  *state.ManagedState // Pending state tracking virtual nonces
 	currentMaxGas uint64              // Current gas limit for transaction caps
+	// 블록체인 헤드의 현재상태
+	// 가상 논스를 트렉킹하는 대기 상태
+	// 트렌젝션 한도를 위한 가스 제한
 
 	locals  *accountSet // Set of local transaction to exempt from eviction rules
-	// 로컬트렌젝션을 디스크 백업할 저널
 	journal *txJournal  // Journal of local transaction to back up to disk
+	// 로컬트렌젝션을 디스크 백업할 저널
 
 	pending map[common.Address]*txList         // All currently processable transactions
 	queue   map[common.Address]*txList         // Queued but non-processable transactions
 	beats   map[common.Address]time.Time       // Last heartbeat from each known account
 	all     map[common.Hash]*types.Transaction // All transactions to allow lookups
 	priced  *txPricedList                      // All transactions sorted by price
+	// 현재까지 처리된 트렌젝션들
+	// 큐잉되었으나 처리불가능한 트렌젝션들
+	// 각 계정의 마지막 하트비트
+	// 검색을 허용하기 위한 모든 트렌젝션들
+	// 가격으로 정렬된 트렌젝션들
 
 	wg sync.WaitGroup // for shutdown sync
 
@@ -238,9 +268,11 @@ type TxPool struct {
 // 이함수는 네트워크로 부터 들어오는 트렌젝션들을 수집하고 정렬하고 필터링할 새로운 트렌젝션 풀을 생성한다 
 func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain blockChain) *TxPool {
 	// Sanitize the input to ensure no vulnerable gas prices are set
+	// 입력과, 가스갑을 확인
 	config = (&config).sanitize()
 
 	// Create the transaction pool with its initial settings
+	// 초기 설정으로 트렌젝션 풀을 생성
 	pool := &TxPool{
 		config:      config,
 		chainconfig: chainconfig,
@@ -258,6 +290,7 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 	pool.reset(nil, chain.CurrentBlock().Header())
 
 	// If local transactions and journaling is enabled, load from disk
+	// 로컬트렌젝션과 저널링이 켜져있다면 디스크로 부터 읽는다
 	if !config.NoLocals && config.Journal != "" {
 		pool.journal = newTxJournal(config.Journal)
 
@@ -274,8 +307,8 @@ func NewTxPool(config TxPoolConfig, chainconfig *params.ChainConfig, chain block
 	pool.chainHeadSub = pool.chain.SubscribeChainHeadEvent(pool.chainHeadCh)
 
 	// Start the event loop and return
-	pool.wg.Add(1)
 	// 풀루프를 시작한다
+	pool.wg.Add(1)
 	go pool.loop()
 
 	return pool
@@ -290,6 +323,7 @@ func (pool *TxPool) loop() {
 	defer pool.wg.Done()
 
 	// Start the stats reporting and transaction eviction tickers
+	// 상태보고를 시작한다 
 	var prevPending, prevQueued, prevStales int
 
 	report := time.NewTicker(statsReportInterval)
@@ -302,9 +336,11 @@ func (pool *TxPool) loop() {
 	defer journal.Stop()
 
 	// Track the previous head headers for transaction reorgs
+	// 트렌젝션 재구성을 위해 기존 헤드 헤더들을 트랙킹한다
 	head := pool.chain.CurrentBlock()
 
 	// Keep waiting for and reacting to the various events
+	// 다양한 이벤트 처리
 	for {
 		select {
 		// Handle ChainHeadEvent
@@ -321,10 +357,12 @@ func (pool *TxPool) loop() {
 				pool.mu.Unlock()
 			}
 		// Be unsubscribed due to system stopped
+		// 시스템중지로 인한 구독종료
 		case <-pool.chainHeadSub.Err():
 			return
 
 		// Handle stats reporting ticks
+		// 상태보고 틱
 		case <-report.C:
 			pool.mu.RLock()
 			pending, queued := pool.stats()
@@ -337,6 +375,7 @@ func (pool *TxPool) loop() {
 			}
 
 		// Handle inactive account transaction eviction
+		// 비활성화된 계정의 트렌젝션 퇴출
 		case <-evict.C:
 			pool.mu.Lock()
 			for addr := range pool.queue {
@@ -354,6 +393,7 @@ func (pool *TxPool) loop() {
 			pool.mu.Unlock()
 
 		// Handle local transaction journal rotation
+		// 로컬트렌젝션의 저널 순회
 		case <-journal.C:
 			if pool.journal != nil {
 				pool.mu.Lock()
@@ -368,6 +408,7 @@ func (pool *TxPool) loop() {
 
 // lockedReset is a wrapper around reset to allow calling it in a thread safe
 // manner. This method is only ever used in the tester!
+// lockedReset함수는 스레드 세이프하게 reset을 호출하기 위한 랩퍼함수이다
 func (pool *TxPool) lockedReset(oldHead, newHead *types.Header) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -377,12 +418,16 @@ func (pool *TxPool) lockedReset(oldHead, newHead *types.Header) {
 
 // reset retrieves the current state of the blockchain and ensures the content
 // of the transaction pool is valid with regard to the chain state.
+// reset함수는 블록체인의 현재 상태를 반환하고, 트렌젝션 풀의 컨텐츠들이
+// 체인상태에 대하여 유효한지 보장한다
 func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	// If we're reorging an old state, reinject all dropped transactions
+	// 오래된 상태를 재구성할때, 누락되었던 모든 트렌젝션을 재삽입한다
 	var reinject types.Transactions
 
 	if oldHead != nil && oldHead.Hash() != newHead.ParentHash {
 		// If the reorg is too deep, avoid doing it (will happen during fast sync)
+		// 재구성이 오래걸리면 회피한다
 		oldNum := oldHead.Number.Uint64()
 		newNum := newHead.Number.Uint64()
 
@@ -390,6 +435,7 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 			log.Debug("Skipping deep transaction reorg", "depth", depth)
 		} else {
 			// Reorg seems shallow enough to pull in all transactions into memory
+			// 재구성이 모든 트렌젝션을 메모리에 올릴만큼 얕을때
 			var discarded, included types.Transactions
 
 			var (
@@ -426,6 +472,7 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 		}
 	}
 	// Initialize the internal state to the current head
+	// 현재상태에 대해 내부 상태를 초기화한다
 	if newHead == nil {
 		newHead = pool.chain.CurrentBlock().Header() // Special case during testing
 	}
@@ -439,6 +486,7 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	pool.currentMaxGas = newHead.GasLimit
 
 	// Inject any transactions discarded due to reorgs
+	// 재구성때 제거되었던 트렌젝션을 재삽입한다
 	log.Debug("Reinjecting stale transactions", "count", len(reinject))
 	pool.addTxsLocked(reinject, false)
 
@@ -446,24 +494,32 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	// any transactions that have been included in the block or
 	// have been invalidated because of another transaction (e.g.
 	// higher gas price)
+	// 펜딩 트렌젝션의 풀을 검증한다.
+	// 이미 블록에 포함되었거나 다른 트렌젝션에 의해 비활성화된
+	// 트렌젝션을 제거한다
 	pool.demoteUnexecutables()
 
 	// Update all accounts to the latest known pending nonce
+	// 모든 계정을 마지막 대기중인 논스로 업데이트한다
 	for addr, list := range pool.pending {
 		txs := list.Flatten() // Heavy but will be cached and is needed by the miner anyway
 		pool.pendingState.SetNonce(addr, txs[len(txs)-1].Nonce()+1)
 	}
 	// Check the queue and move transactions over to the pending if possible
 	// or remove those that have become invalid
+	// 큐상태를 체크하고 가능하다면 트렌젝션을 대기로 옮기거나 무효화된 것은 제거한다
 	pool.promoteExecutables(nil)
 }
 
 // Stop terminates the transaction pool.
+// Stop함수는 트렌젝션 풀을 제거한다
 func (pool *TxPool) Stop() {
 	// Unsubscribe all subscriptions registered from txpool
+	// txpool로부터 등록된 구독을 해지한다
 	pool.scope.Close()
 
 	// Unsubscribe subscriptions registered from blockchain
+	// 블록체인으로 부터 등록된 구독을 제거한다
 	pool.chainHeadSub.Unsubscribe()
 	pool.wg.Wait()
 
@@ -475,11 +531,14 @@ func (pool *TxPool) Stop() {
 
 // SubscribeNewTxsEvent registers a subscription of NewTxsEvent and
 // starts sending event to the given channel.
+// SubscribeNewTxsEvent함수는 NewTxsEvent에 대한 구독을 등록하고
+// 주어진 채널로 이벤트를 전송하기 시작한다
 func (pool *TxPool) SubscribeNewTxsEvent(ch chan<- NewTxsEvent) event.Subscription {
 	return pool.scope.Track(pool.txFeed.Subscribe(ch))
 }
 
 // GasPrice returns the current gas price enforced by the transaction pool.
+// GasPrice함수는 트렌젝션 풀에의해 강제된 현재 가스 가격을 반환한다 
 func (pool *TxPool) GasPrice() *big.Int {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
@@ -489,6 +548,8 @@ func (pool *TxPool) GasPrice() *big.Int {
 
 // SetGasPrice updates the minimum price required by the transaction pool for a
 // new transaction, and drops all transactions below this threshold.
+// SetGasPrice함수는 새로운 트렌젝션에 대해 트렌젝션 풀에의해 요구되는 최소 가격을 갱신하고,
+// 한도보다 작은 모든 트렌젹션을 제거한다
 func (pool *TxPool) SetGasPrice(price *big.Int) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -501,6 +562,7 @@ func (pool *TxPool) SetGasPrice(price *big.Int) {
 }
 
 // State returns the virtual managed state of the transaction pool.
+// State 함수는 가상으로 관리되는 트렌젝션 풀의 상태를 반환한다
 func (pool *TxPool) State() *state.ManagedState {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
@@ -510,6 +572,7 @@ func (pool *TxPool) State() *state.ManagedState {
 
 // Stats retrieves the current pool stats, namely the number of pending and the
 // number of queued (non-executable) transactions.
+// Stats함수는 현재 풀의 상태(대기중/큐잉되었으나 실행불가능한)를 반환한다
 func (pool *TxPool) Stats() (int, int) {
 	pool.mu.RLock()
 	defer pool.mu.RUnlock()
@@ -535,6 +598,8 @@ func (pool *TxPool) stats() (int, int) {
 
 // Content retrieves the data content of the transaction pool, returning all the
 // pending as well as queued transactions, grouped by account and sorted by nonce.
+// Contents 함수는 트렌젝션풀의 데이터 컨텐츠를 반환하고, 
+// 대기, 큐잉 트렌젝션을 계정별로 그룹하고 논스로 정렬하여 반환한다
 func (pool *TxPool) Content() (map[common.Address]types.Transactions, map[common.Address]types.Transactions) {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -569,6 +634,7 @@ func (pool *TxPool) Pending() (map[common.Address]types.Transactions, error) {
 // local retrieves all currently known local transactions, groupped by origin
 // account and sorted by nonce. The returned transaction set is a copy and can be
 // freely modified by calling code.
+// local함수는 
 func (pool *TxPool) local() map[common.Address]types.Transactions {
 	txs := make(map[common.Address]types.Transactions)
 	for addr := range pool.locals.accounts {
@@ -1204,6 +1270,7 @@ func (as *accountSet) contains(addr common.Address) bool {
 
 // containsTx checks if the sender of a given tx is within the set. If the sender
 // cannot be derived, this method returns false.
+// containsTx함수는 
 func (as *accountSet) containsTx(tx *types.Transaction) bool {
 	if addr, err := types.Sender(as.signer, tx); err == nil {
 		return as.contains(addr)
@@ -1212,6 +1279,7 @@ func (as *accountSet) containsTx(tx *types.Transaction) bool {
 }
 
 // add inserts a new address into the set to track.
+// add함수는 새로운 주소를 트래킹 셋에 추가한다
 func (as *accountSet) add(addr common.Address) {
 	as.accounts[addr] = struct{}{}
 }
